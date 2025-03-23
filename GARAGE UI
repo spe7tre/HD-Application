@@ -1,0 +1,113 @@
+local handler = {}
+
+-- // SERVICES \\
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer.PlayerGui
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local Lighting = game:GetService("Lighting")
+local CollectionService = game:GetService("CollectionService")
+
+-- // REPLICATED \\
+local module = ReplicatedStorage:WaitForChild("Module")
+local dataModules = module:WaitForChild("Data")
+
+local mainMenuUI = require(script.Parent.MainMenuUI)
+local garageData = require(dataModules.GarageData)
+local cameraData = require(dataModules.CameraData)
+
+local resources = ReplicatedStorage:WaitForChild("Resources")
+local gui = resources:WaitForChild("Gui")
+local sounds = resources:WaitForChild("Sounds")
+
+local event = resources:WaitForChild("Event")
+
+-- // SCREENGUI \\
+local mainGui = PlayerGui:WaitForChild("MainGui")
+local garageFrame = mainGui.MainMenu.Garage
+
+local currentCategory
+local camera = game.Workspace.Camera
+
+function handler.getCurrentFrame()
+	for _, frame in garageFrame:GetChildren() do
+		if frame:IsA("Frame") or frame:IsA("ScrollingFrame") then
+			if frame.Visible then
+				return frame
+			end
+		end
+	end
+end
+
+for _, button in garageFrame.Categories:GetChildren() do
+	if button:IsA("TextButton") then
+		button.MouseButton1Click:Connect(function()
+			currentCategory = button.Name
+			garageFrame.Categories.Visible = false
+			garageFrame.Back.TextLabel.Text = "Back"
+			if button:HasTag("GarageColorCategory") then
+				garageFrame:FindFirstChild("Color").Visible = true
+			else
+				garageFrame:FindFirstChild(button.Name).Visible = true
+			end
+		end)
+	end
+end
+
+for _, frame in garageFrame:GetChildren() do
+	if frame:IsA("ScrollingFrame") and frame.Name ~= "Categories" then
+		for _, button in frame:GetChildren() do
+			if button:IsA("TextButton") then
+				button.MouseButton1Click:Connect(function()
+					local currentCar = garageFrame:GetAttribute("CurrentCar")
+					if button.Parent.Name == "Color" then -- it is a changing color category
+						local color = button.Name
+						local colorRGB = garageData.Colors[color]
+						if currentCategory == "BodyColor" then
+							workspace.Garage.CustomiseCars:FindFirstChild(currentCar).Body.Color = colorRGB
+						elseif currentCategory == "WindowColor" then
+							workspace.Garage.CustomiseCars:FindFirstChild(currentCar).Windows.Color = colorRGB
+						end
+						event:FireServer({cmd = "CAR_CUSTOMISATION", option = currentCategory, car = currentCar, choice = color})
+					end
+				end)
+			end
+		end
+	end
+end
+
+garageFrame.Back.MouseButton1Click:Connect(function()
+	local currentFrame = handler.getCurrentFrame()
+	if currentFrame.Name == "Cars" then
+		TweenService:Create(Lighting.Blur, TweenInfo.new(2), {Size = 11}):Play()
+		sounds.Music:Play()
+		sounds.Music.Volume = 0
+		TweenService:Create(sounds.GarageMusic, TweenInfo.new(.5), {Volume = 0}):Play()
+		TweenService:Create(sounds.Music, TweenInfo.new(.5), {Volume = .2}):Play()
+		
+		mainGui.Sequence.Image.Image = "rbxassetid://73929942175054"
+		mainMenuUI.sequenceFrame(true)
+		camera.CameraType = Enum.CameraType.Scriptable
+		camera.CFrame = CFrame.lookAt(cameraData.MenuCamera[1], cameraData.MenuCamera[2])
+		mainMenuUI.changeLogo(false)
+		mainMenuUI.changeFrame(mainGui.MainMenu.MainButtons, garageFrame)
+	else
+		if currentFrame.Name == "Categories" then
+			garageFrame.Cars.Visible = true
+			garageFrame.ASubTitle.Text = "CARS"
+			garageFrame.Back.TextLabel.Text = "Exit garage"
+			
+			camera.CameraType = Enum.CameraType.Scriptable
+			camera.CFrame = CFrame.lookAt(cameraData.GarageCamera[1], cameraData.GarageCamera[2])
+			-- DONE
+		else
+			garageFrame.Categories.Visible = true
+			garageFrame.ASubTitle.Text = "CATEGORIES"
+			garageFrame.Back.TextLabel.Text = "Back"
+		end
+		currentFrame.Visible = false
+	end
+end)
+
+return handler
