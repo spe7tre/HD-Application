@@ -1,0 +1,203 @@
+local isLoaded = game:IsLoaded() or game.Loaded:Wait()
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer.PlayerGui
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Lighting = game:GetService("Lighting")
+local UserInputService = game:GetService("UserInputService")
+local CollectionService = game:GetService("CollectionService")
+local TweenService = game:GetService("TweenService")
+
+-- // REPLICATED \\
+local module = ReplicatedStorage:WaitForChild("Module")
+local dataModules = module:WaitForChild("Data")
+
+local resources = ReplicatedStorage:WaitForChild("Resources")
+local sounds = resources:WaitForChild("Sounds")
+local gui = resources:WaitForChild("Gui")
+
+local utilities = ReplicatedStorage:WaitForChild("Utilities")
+local FormatNumber = require(utilities:FindFirstChild("FormatNumber").Main)
+local formatter = FormatNumber.NumberFormatter.with()
+
+local event = resources:WaitForChild("Event")
+local returnData = resources:WaitForChild("ReturnData")
+
+local interface = script.Interface
+
+-- // MODULES \\
+local loadUI = require(interface:WaitForChild("LoadUI"))
+local timingUI = require(interface:WaitForChild("TimingUI"))
+local hudUI = require(interface:WaitForChild("HUDUI"))
+local mainMenuUI = require(interface:WaitForChild("MainMenuUI"))
+local settingsUI = require(interface:WaitForChild("SettingsUI"))
+local shopUI = require(interface:WaitForChild("ShopUI"))
+local developerUI = require(interface:WaitForChild("DeveloperUI"))
+local garageUI = require(interface:WaitForChild("GarageUI"))
+
+local cameraData = require(dataModules.CameraData)
+
+--game.StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All, false)
+--game.StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Chat, true)
+
+-- // SCREENGUI \\
+local mainGui = PlayerGui:WaitForChild("MainGui")
+local loadingScreenGui = PlayerGui:WaitForChild("LoadingGui")
+
+-- // VARIABLES AND TABLES \\
+local profile = {}
+local menuReturn = false
+local camera = workspace.Camera
+local drsAvailable = false
+
+-- // FUNCTIONS \\
+Lighting.Blur.Enabled = true
+
+local keybindsConnectionBegan
+local keybindsConnectionEnded
+
+local function input(keybinds)
+
+	-- Disconnect old connections if they exist
+	if keybindsConnectionBegan then
+		keybindsConnectionBegan:Disconnect()
+	end
+	if keybindsConnectionEnded then
+		keybindsConnectionEnded:Disconnect()
+	end
+
+	-- Connect new event listeners
+	keybindsConnectionBegan = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+		if gameProcessed then return end
+		if input.UserInputType == Enum.UserInputType.Keyboard then
+			if input.KeyCode == Enum.KeyCode.X then -- timing leaderboard
+				mainGui.Timing.TimingLeaderboard.Visible = true
+			elseif input.KeyCode == Enum.KeyCode.L then -- time change
+				event:FireServer({cmd = "TIME"})
+			elseif input.KeyCode == Enum.KeyCode.M then -- menu return
+				if mainGui.Timing.Visible == false then return end
+				if menuReturn then return end
+				event:FireServer({cmd = "LEAVE_CAR"})
+				menuReturn = true
+				TweenService:Create(Lighting.Blur, TweenInfo.new(2), {Size = 11}):Play()
+				for _, car in mainGui.SelectCar.Container:GetChildren() do
+					if car:IsA("TextButton") then
+						car:Destroy()
+					end
+				end
+				
+				mainGui.Sequence.Image.Image = "rbxassetid://110648033674129"
+				mainMenuUI.sequenceFrame(true)
+				mainGui.Timing.Visible = false
+				camera.CameraType = Enum.CameraType.Scriptable
+				camera.CFrame = CFrame.lookAt(cameraData.MenuCamera[1], cameraData.MenuCamera[2])
+				mainMenuUI.changeLogo(false)
+				mainMenuUI.changeFrame(mainGui.MainMenu.MainButtons)
+				task.wait(5)
+				menuReturn = false
+			elseif input.KeyCode == Enum.KeyCode[keybinds.Nitro] then -- nitro
+				event:FireServer({cmd = "NITRO", state = "ON"})
+			elseif input.KeyCode == Enum.KeyCode[keybinds.Drift] then -- drift
+				event:FireServer({cmd = "DRIFT", state = "ON"})
+			elseif input.KeyCode == Enum.KeyCode.P then -- admin panel
+				if returnData:InvokeServer({cmd = "IS_ADMIN"}) == true then
+					mainGui.AdminPanel.Visible = not mainGui.AdminPanel.Visible
+				end
+			elseif input.KeyCode == Enum.KeyCode.Y then -- server panel
+				mainGui.ServerPanel.Visible = not mainGui.ServerPanel.Visible
+			elseif input.KeyCode == Enum.KeyCode[keybinds.DRS] then -- drs
+				if not drsAvailable then return end
+				event:FireServer({cmd = "DRS"})
+			end
+		end
+	end)
+
+	keybindsConnectionEnded = UserInputService.InputEnded:Connect(function(input, gameProcessed)
+		if gameProcessed then return end
+		if input.UserInputType == Enum.UserInputType.Keyboard then
+			if input.KeyCode == Enum.KeyCode.X then
+				mainGui.Timing.TimingLeaderboard.Visible = false
+			elseif input.KeyCode == Enum.KeyCode[keybinds.Nitro] then -- nitro
+				event:FireServer({cmd = "NITRO", state = "OFF"})
+			elseif input.KeyCode == Enum.KeyCode[keybinds.Drift] then -- drift
+				event:FireServer({cmd = "DRIFT", state = "OFF"})
+			end
+		end
+	end)
+end
+
+-- Initial keybind setup
+
+
+-- // EVENTS \\
+event.OnClientEvent:Connect(function(args)
+	if args.cmd == "LOAD_DATA" then
+		profile = args.data
+		loadUI.Settings(profile)
+		loadUI.Money(profile)
+		input(profile.Keybinds)
+	elseif args.cmd == "PLAYER_JOINED" then
+		
+	elseif args.cmd == "PLAYER_LEFT" then
+		
+	elseif args.cmd == "MONEY" then
+		mainGui.Money.Text = "$"..formatter:Format(args.finalValue)
+		local clone = gui.MoneyChange:Clone()
+		clone.Text = "$"..formatter:Format(args.changedValue)
+		if args.change == "negative" then
+			clone.TextColor3 = Color3.fromRGB(255, 89, 89)
+		end
+		clone.Parent = mainGui
+		local trans = TweenService:Create(clone, TweenInfo.new(.5), {TextTransparency = 0}):Play()
+		local pos = TweenService:Create(clone, TweenInfo.new(5), {Position = UDim2.new(0.812, 0, 0.685, 0)}):Play()
+		task.wait(5)
+		local trans = TweenService:Create(clone, TweenInfo.new(.5), {TextTransparency = 1}):Play()
+		task.wait(5)
+		clone:Destroy()
+	elseif args.cmd == "DEATH" then
+
+	elseif args.cmd == "RESPAWN" then
+		
+	elseif args.cmd == "UPDATE_TIMING_LEADERBOARD" then
+		timingUI.UpdateTimingLeaderboard(args)
+	elseif args.cmd == "UPDATE_SECTORS" then
+		timingUI.UpdateSectors(args)
+	elseif args.cmd == "RACE_STARTED" then
+		timingUI.RaceStarted()
+	elseif args.cmd == "RACE_ENDED" then
+		timingUI.RaceEnded()
+	elseif args.cmd == "UPDATE_POSITION" then
+		
+	elseif args.cmd == "GRID_LIGHT" then
+		sounds.GridLight:Play()
+	elseif args.cmd == "CUT_ON" then
+		hudUI.Cut(true)
+	elseif args.cmd == "CUT_OFF" then
+		hudUI.Cut(false)
+	elseif args.cmd == "UPDATE_SPEED" then
+		hudUI.Speed(args.speed)
+	elseif args.cmd == "ENTERED_CAR" then
+		mainGui.Timing.Visible = true
+		local keybinds = returnData:InvokeServer({cmd = "GET_KEYBINDS"})
+		for keybind, key in keybinds do
+			mainGui.Timing.Controls[keybind].Text = keybind.." "..key
+		end
+	elseif args.cmd == "DRS" then
+		if args.state == "ON" then
+			hudUI.DRS("ON")
+		elseif args.state == "OFF" then
+			hudUI.DRS("OFF")
+		elseif args.state == "AVAILABLE" then
+			hudUI.DRS("AVAILABLE")
+			drsAvailable = true
+		elseif args.state == "UNAVAILABLE" then
+			hudUI.DRS("UNAVAILABLE")
+			drsAvailable = false
+		end
+	elseif args.cmd == "UPDATE_LEADERBOARD" then
+		timingUI.UpdateRaceLeaderboard(args.leaderboard)
+	elseif args.cmd == "KEYBINDS_UPDATED" then
+		print("akfkafalgf")
+		input(args.keybinds)
+	end
+end)
