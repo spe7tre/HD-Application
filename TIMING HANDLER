@@ -1,0 +1,272 @@
+local module = {}
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local dataHandler = require(script.Parent.DataHandler)
+
+local event = ReplicatedStorage:WaitForChild("Resources").Event
+
+local playerTimes = {}
+local leaderboard = {
+	{name = "max hillgrove", totalTime = 56, color = Color3.fromRGB(255, 0, 0)},
+	{name = "paki jeevs", totalTime = 378, color = Color3.fromRGB(33, 146, 20)},
+	{name = "jayden reynolds", totalTime = 39, color = Color3.fromRGB(0, 255, 167)},
+	{name = "maddz", totalTime = 69, color = Color3.fromRGB(6, 21, 224)},
+	{name = "fake paki", totalTime = 58, color = Color3.fromRGB(0, 255, 167)},
+}
+local DEBOUNCE_TIME = 1
+local MAX_LAPS = 3
+local raceActive = false
+local racePlayers = {}
+local purpleSectors = {0, 0, 0}
+local purpleLapTime = 0
+
+local function initPlayer(player)
+    playerTimes[player] = {
+        lapActive = false,
+		lap = 0,
+		sector = 0,
+        bestLapTime = 0,
+        lastTime = 0,
+        sectorStart = 0,
+        sectorTimes = {0, 0, 0},
+        bestSectorTimes = {0, 0, 0},
+        lastSector = 3,
+		debounce = {0, 0, 0},
+		totalTime = 0,
+    }
+end
+
+local function resetRaceData()
+	playerTimes = {} 
+	racePlayers = {}
+	purpleSectors = {0, 0, 0}
+	purpleLapTime = 0
+end
+
+function module.StartRace()
+	if raceActive then return end
+	raceActive = true
+	leaderboard = {}
+	resetRaceData()
+	
+	for _, player in pairs(Players:GetPlayers()) do
+		initPlayer(player)
+		event:FireClient(player, {cmd = "RACE_STARTED"})
+		table.insert(racePlayers, player)
+	end
+	
+	local function lightsOff()
+		for _, light in workspace.Qatar.Grid.Lights:GetChildren() do
+			if light:IsA("Part") and light.Color == Color3.fromRGB(255, 89, 89) then
+				light.Transparency = 0.85
+			end
+		end
+	end
+	
+	lightsOff()
+	
+	for i = 1, 5 do
+		if not raceActive then
+			lightsOff()
+			return
+		end
+		workspace.Qatar.Grid.Lights["Light"..i].Transparency = 0
+		event:FireAllClients({cmd = "GRID_LIGHT"})
+		task.wait(1)
+	end
+	
+	task.wait(math.random(10, 30)/10)
+	lightsOff()
+end
+
+function module.EndRace()
+	raceActive = false
+	print("race ended")
+
+	for _, player in pairs(Players:GetPlayers()) do
+		event:FireClient(player, {cmd = "RACE_ENDED"})
+	end
+	resetRaceData()
+end
+
+function module.Sector(hit, sector)
+	local player = Players:GetPlayerFromCharacter(hit.Parent)
+	if not player then return end
+	if not playerTimes[player] then initPlayer(player) end
+	
+	local data = playerTimes[player]
+	local currentTime = tick()
+
+	if currentTime - data.debounce[sector] < DEBOUNCE_TIME then
+		return
+	end
+	data.debounce[sector] = currentTime -- update debounce time
+	
+	if sector == 3 then
+		print("SECTOR 1")
+		data.sector = 1
+		if raceActive and data.lap == 0 then
+			data.lap += 1
+			module.UpdateLeaderboard(player, data)
+		end
+		if not data.lapActive then
+			-- start a new lap if no lap
+			print(data.totalTime)
+			data.lapActive = true
+			--module.UpdateLeaderboard(player, data)
+			data.lastTime = currentTime
+			data.sectorStart = currentTime
+			data.sectorTimes = {0, 0, 0}
+			data.bestSectorTimes = {0, 0, 0}
+			data.lastSector = 3 -- reset for correct order
+		elseif data.lastSector == 2 then
+			-- finish lap and reset timing
+			local bestS3 = false
+			local purpleS3 = false
+			local purpleLap = false
+			data.sectorTimes[3] = currentTime - data.sectorStart
+			data.totalTime += data.sectorTimes[3]
+			print(data.totalTime)
+			
+			if raceActive then
+				data.lap += 1 -- ADD LAP
+				--module.UpdateLeaderboard(player, data)
+				--if data.lap >= MAX_LAPS then
+				--	print(player.Name.." finished the race")
+				--	event:FireClient(player, {cmd = "RACE_FINISHED"})
+				--end
+			end
+			
+			if purpleSectors[3] == 0 or data.sectorTimes[3] < purpleSectors[3] then
+				purpleSectors[3] = data.bestSectorTimes[3]
+				purpleS3 = true
+			end
+			
+			if data.bestSectorTimes[3] == 0 or data.sectorTimes[3] < data.bestSectorTimes[3] then
+				data.bestSectorTimes[3] = data.sectorTimes[3]
+				bestS3 = true
+			end
+			
+			local lapTime = currentTime - data.lastTime
+			
+			if data.bestLapTime == 0 or purpleLapTime > lapTime and purpleLapTime > 0 then
+				purpleLap = true
+				--print("FASTEST LAP")
+			end
+			
+			if data.bestLapTime == 0 or data.bestLapTime > lapTime and data.bestLapTime > 0 then
+				event:FireAllClients({cmd = "UPDATE_TIMING_LEADERBOARD", sectors = data.sectorTimes, lapTime = lapTime, best = true, bestS3 = bestS3, sector = 3, purpleS3 = purpleS3, purpleLap = purpleLap})
+				event:FireClient(player, {cmd = "UPDATE_SECTORS", sectors = data.sectorTimes, lapTime = lapTime, best = true, bestS3 = bestS3, sector = 3, purpleS3 = purpleS3, purpleLap = purpleLap})
+				data.bestLapTime = lapTime
+			else
+				event:FireAllClients({cmd = "UPDATE_TIMING_LEADERBOARD", sectors = data.sectorTimes, lapTime = lapTime, best = false, bestS3 = bestS3, sector = 3, purpleS3 = purpleS3, purpleLap = purpleLap})
+				event:FireClient(player, {cmd = "UPDATE_SECTORS", sectors = data.sectorTimes, lapTime = lapTime, best = false, bestS3 = bestS3, sector = 3, purpleS3 = purpleS3, purpleLap = purpleLap})
+			end
+			
+			local change
+			dataHandler.UpdateData(player, "Money", nil, function(currentMoney)
+				change = "positive"
+				return currentMoney + 250
+			end)
+			event:FireClient(player, {cmd = "MONEY", changedValue = 250, change = change, finalValue = dataHandler.GetData(player, "Money")})
+			
+			-- reset for next lap
+			data.lastTime = currentTime
+			--print(currentTime)
+			data.sectorTimes = {0, 0, 0}
+			data.sectorStart = currentTime
+			data.lastSector = 3
+			--print(string.format("%.3f", tick() - data.totalTime))
+		end
+	elseif sector == 2 and data.lapActive and data.lastSector == 1 then
+		print("SECTOR 3")
+		data.sector = 3
+		-- sector 2 (only valid if last touched sector was 1)
+		local purpleS2 = false
+		data.sectorTimes[2] = currentTime - data.sectorStart
+		data.totalTime += data.sectorTimes[2]
+		print(data.totalTime)
+		if purpleSectors[2] == 0 or data.sectorTimes[2] < purpleSectors[2] then
+			purpleSectors[2] = data.bestSectorTimes[2]
+			purpleS2 = true
+		end
+		
+		
+		
+		if raceActive then
+			--module.UpdateLeaderboard(player, data)
+		end
+		
+		if data.bestSectorTimes[2] == 0 or data.sectorTimes[2] < data.bestSectorTimes[2] then
+			data.bestSectorTimes[2] = data.sectorTimes[2]
+			event:FireAllClients({cmd = "UPDATE_TIMING_LEADERBOARD", sectorTime = data.bestSectorTimes[2], best = true, sector = 2, purpleS2 = purpleS2})
+			event:FireClient(player, {cmd = "UPDATE_SECTORS", sectorTime = data.sectorTimes[2], best = true, sector = 2, purpleS2 = purpleS2})
+		else
+			event:FireAllClients({cmd = "UPDATE_TIMING_LEADERBOARD", sectorTime = data.sectorTimes[2], best = false, sector = 2, purpleS2 = purpleS2})
+			event:FireClient(player, {cmd = "UPDATE_SECTORS", sectorTime = data.sectorTimes[2], best = false, sector = 2, purpleS2 = purpleS2})
+		end
+		data.sectorStart = currentTime
+		data.lastSector = 2
+		--print(string.format("%.3f", tick() - data.totalTime))
+	elseif sector == 1 and data.lapActive and data.lastSector == 3 then
+		print("SECTOR 2")
+		data.sector = 2
+		-- sector 3 (only valid if last touched sector was 2)
+		local purpleS1 = false
+		data.sectorTimes[1] = currentTime - data.sectorStart
+		data.totalTime += data.sectorTimes[1]
+		print(data.totalTime)
+		if purpleSectors[1] == 0 or data.sectorTimes[1] < purpleSectors[1] then
+			purpleSectors[1] = data.bestSectorTimes[1]
+			purpleS1 = true
+		end
+		
+		if raceActive then
+			--module.UpdateLeaderboard(player, data)
+		end
+		
+		if data.bestSectorTimes[1] == 0 or data.sectorTimes[1] < data.bestSectorTimes[1] then
+			data.bestSectorTimes[1] = data.sectorTimes[1]
+			event:FireAllClients({cmd = "UPDATE_TIMING_LEADERBOARD", sectorTime = data.bestSectorTimes[1], best = true, sector = 1, purpleS1 = purpleS1})
+			event:FireClient(player, {cmd = "UPDATE_SECTORS", sectorTime = data.sectorTimes[1], best = true, sector = 1, purpleS1 = purpleS1})
+		else
+			event:FireAllClients({cmd = "UPDATE_TIMING_LEADERBOARD", sectorTime = data.sectorTimes[1], best = false, sector = 1, purpleS1 = purpleS1})
+			event:FireClient(player, {cmd = "UPDATE_SECTORS", sectorTime = data.sectorTimes[1], best = false, sector = 1, purpleS1 = purpleS1})
+		end
+		data.sectorStart = currentTime
+		data.lastSector = 1
+	end
+end
+
+function module.UpdateLeaderboard(player, data)
+	--print("Updating leaderboard for " .. player.Name)
+	local sortedDrivers = {}
+	
+	for player, data in pairs(playerTimes) do
+		table.insert(sortedDrivers, {name = player.Name, lap = data.lap, sector = data.sector, totalTime = data.totalTime})
+	end
+	
+	table.sort(sortedDrivers, function(a, b)
+		if a.lap ~= b.lap then
+			return a.lap > b.lap  -- Higher lap count is ahead
+		elseif a.sector ~= b.sector then
+			return a.sector > b.sector  -- Higher sector is ahead
+		else
+			return a.totalTime < b.totalTime  -- Lower total time is ahead
+		end
+	end)
+	
+	local leaderTime = sortedDrivers[1].totalTime
+	
+	local gap = data.totalTime - leaderTime
+	print(gap)
+	
+	print(sortedDrivers)
+	event:FireAllClients({cmd = "UPDATE_LEADERBOARD", leaderboard = sortedDrivers})
+end
+
+
+
+return module
