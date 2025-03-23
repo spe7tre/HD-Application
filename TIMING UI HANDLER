@@ -1,0 +1,183 @@
+local handler = {}
+
+-- // SERVICES \\
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer.PlayerGui
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- // REPLICATED \\
+local module = ReplicatedStorage:WaitForChild("Module")
+local dataModules = module:WaitForChild("Data")
+
+local resources = ReplicatedStorage:WaitForChild("Resources")
+local gui = resources:WaitForChild("Gui")
+
+local interface = script.Parent
+
+local event = resources:WaitForChild("Event")
+
+-- // SCREENGUI \\
+local mainGui = PlayerGui:WaitForChild("MainGui")
+local timingLeaderboardFrame = mainGui.Timing.TimingLeaderboard.ScrollingFrame
+local raceLeaderboardFrame = mainGui.Timing.RaceLeaderboard
+
+function handler.RaceStarted()
+	local sectorFrame = mainGui.Timing.Sectors
+	mainGui.Timing.RaceLeaderboard.Visible = true
+	
+	sectorFrame.S1.TextLabel.Text = ""
+	sectorFrame.S2.TextLabel.Text = ""
+	sectorFrame.S3.TextLabel.Text = ""
+	sectorFrame.S1.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	sectorFrame.S2.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	sectorFrame.S3.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	sectorFrame.BestTime.Text = ""
+	sectorFrame.LastTime.Text = ""
+end
+
+function handler.RaceEnded()
+	for _, playerFrame in raceLeaderboardFrame.Drivers:GetChildren() do
+		if playerFrame:IsA("Frame") then
+			playerFrame:Destroy()
+		end
+	end
+	mainGui.Timing.RaceLeaderboard.Visible = false
+end
+
+function handler.UpdateTimingLeaderboard(args)
+	if timingLeaderboardFrame:FindFirstChild(LocalPlayer.Name) == nil then
+		local preset = gui.TimingSystem.TimingLeaderboardPreset:Clone()
+		preset.Name = LocalPlayer.Name
+		preset.Driver.Text = LocalPlayer.Name
+		preset.Parent = timingLeaderboardFrame
+	end
+
+	local playerLeaderboardFrame = timingLeaderboardFrame[LocalPlayer.Name]
+
+	if args.sector == 3 then
+		playerLeaderboardFrame.Last.Text = string.format("%.3f", args.lapTime)
+		if args.best then
+			playerLeaderboardFrame.Best.Text = string.format("%.3f", args.lapTime)
+		end
+		playerLeaderboardFrame.S3.TextColor3 = Color3.fromRGB(255, 255, 255)
+		if args.bestS3 then
+			playerLeaderboardFrame.S3.TextColor3 = Color3.fromRGB(0, 255, 0)
+		end
+		playerLeaderboardFrame.S1.Text = string.format("%.3f", args.sectors[1])
+		playerLeaderboardFrame.S2.Text = string.format("%.3f", args.sectors[2])
+		playerLeaderboardFrame.S3.Text = string.format("%.3f", args.sectors[3])
+	elseif args.sector == 2 then
+		playerLeaderboardFrame.S2.Text = string.format("%.3f", args.sectorTime)
+		playerLeaderboardFrame.S2.TextColor3 = Color3.fromRGB(255, 255, 255)
+		if args.best then
+			playerLeaderboardFrame.S2.TextColor3 = Color3.fromRGB(0, 255, 0)
+		end
+	elseif args.sector == 1 then
+		playerLeaderboardFrame.S2.Text = ""
+		playerLeaderboardFrame.S3.Text = ""
+		playerLeaderboardFrame.S1.Text = string.format("%.3f", args.sectorTime)
+		playerLeaderboardFrame.S1.TextColor3 = Color3.fromRGB(255, 255, 255)
+		if args.best then
+			playerLeaderboardFrame.S1.TextColor3 = Color3.fromRGB(0, 255, 0)
+		end
+	end
+end
+
+function handler.UpdateRaceLeaderboard(leaderboardData)
+	 --leaderboard is sorted for client to manipulate into leaderboard container
+	
+	
+	
+	for _, playerFrame in raceLeaderboardFrame.Drivers:GetChildren() do
+		if playerFrame:IsA("Frame") then
+			playerFrame:Destroy()
+		end
+	end
+	
+	for _, data in ipairs(leaderboardData) do
+		local playerName = data.name
+		local totalTime = data.totalTime
+
+		-- Clone the template
+		local lbPlayerEntry = gui.LeaderboardDriver:Clone()
+		lbPlayerEntry.Parent = raceLeaderboardFrame.Drivers
+		lbPlayerEntry.Visible = true  -- Show the new entry
+
+		-- Update UI text
+		for i, lbPlayerData in leaderboardData do
+			if lbPlayerData.name == playerName then
+				lbPlayerEntry.Name = tostring(i)
+			end
+		end
+		print(data)
+		lbPlayerEntry.PlayerName.Text = string.upper(playerName:sub(1, 4))  -- Player Name
+		lbPlayerEntry.Color.BackgroundColor3 = data.color
+		-- Display gap or "LEADER"
+		if lbPlayerEntry.Name == "1" then
+			lbPlayerEntry.Gap.Text = "LEADER"
+		else
+			lbPlayerEntry.Gap.Text = string.format("+%.2f", data.gap)
+		end
+	end
+end
+
+function handler.UpdateSectors(args)
+	local sectorFrame = mainGui.Timing.Sectors
+	
+	if args.sector == 3 then
+		sectorFrame.LastTime.Text = string.format("%.3f", args.lapTime)
+		
+		if args.best then
+			sectorFrame.BestTime.Text = string.format("%.3f", args.lapTime)
+		end
+		sectorFrame.S3.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+		if args.purpleS3 then
+			sectorFrame.S3.BackgroundColor3 = Color3.fromRGB(161, 63, 255)
+		elseif args.bestS3 then
+			sectorFrame.S3.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+		end
+		sectorFrame.S1.TextLabel.Text = string.format("%.3f", args.sectors[1])
+		sectorFrame.S2.TextLabel.Text = string.format("%.3f", args.sectors[2])
+		sectorFrame.S3.TextLabel.Text = string.format("%.3f", args.sectors[3])
+	elseif args.sector == 2 then
+		sectorFrame.S2.TextLabel.Text = string.format("%.3f", args.sectorTime)
+		sectorFrame.S2.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+		if args.purpleS2 then
+			sectorFrame.S2.BackgroundColor3 = Color3.fromRGB(161, 63, 255)
+		elseif args.best then
+			sectorFrame.S2.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+		end
+	elseif args.sector == 1 then
+		sectorFrame.S2.TextLabel.Text = ""
+		sectorFrame.S3.TextLabel.Text = ""
+		sectorFrame.S1.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+		sectorFrame.S1.TextLabel.Text = string.format("%.3f", args.sectorTime)
+		sectorFrame.S2.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+		sectorFrame.S3.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+		if args.purpleS1 then
+			sectorFrame.S1.BackgroundColor3 = Color3.fromRGB(161, 63, 255)
+		elseif args.best then
+			sectorFrame.S1.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+		end
+	end
+end
+
+function handler.ResetLeaderboard()
+	
+end
+
+mainGui.ServerPanel.Container.StartRace.MouseButton1Click:Connect(function()
+	event:FireServer({cmd = "START_RACE"})
+end)
+
+mainGui.ServerPanel.Container.EndRace.MouseButton1Click:Connect(function()
+	event:FireServer({cmd = "END_RACE"})
+end)
+
+mainGui.ServerPanel.Container.SC.MouseButton1Click:Connect(function()
+	event:FireServer({cmd = "SAFETY_CAR"})
+	print("fired from client")
+end)
+
+return handler
