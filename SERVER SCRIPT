@@ -1,0 +1,260 @@
+-- // SERVICES \\
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerStorage = game:GetService("ServerStorage")
+local MarketPlaceService = game:GetService("MarketplaceService")
+local CollectionService = game:GetService("CollectionService")
+local Lighting = game:GetService("Lighting")
+local TweenService = game:GetService("TweenService")
+
+-- // REPLICATED \\
+local module = ReplicatedStorage:WaitForChild("Module")
+local dataModules = module:WaitForChild("Data")
+local resources = ReplicatedStorage:WaitForChild("Resources")
+local utilities = ReplicatedStorage:WaitForChild("Utilities")
+
+local event = resources:WaitForChild("Event")
+local returnData = resources:WaitForChild("ReturnData")
+
+-- // MODULES \\
+local ProfileService = require(ServerStorage.Utilities.ProfileService.ProfileService)
+local PlayerDataHandler = require(ServerStorage.Utilities.ProfileService.PlayerDataHandler)
+local dataHandler = require(script.Handlers.DataHandler)
+local timingSystemHandler = require(script.Handlers.TimingHandler)
+local safetycarHandler = require(script.Handlers.SafetyCarHandler)
+local cutHandler = require(script.Handlers.CutHandler)
+local drsHandler = require(script.Handlers.DRSHandler)
+local safeTPHandler = require(script.Handlers.SafeTeleportHandler)
+local nitroHandler = require(script.Handlers.NitroHandler)
+local driftHandler = require(script.Handlers.DriftHandler)
+
+local garageData = require(dataModules.GarageData)
+
+local developers = require(ServerStorage.Module.Data.Developers)
+local codes = require(ServerStorage.Module.Data.Codes)
+
+-- // WORKSPACE \\
+
+
+-- // VARIABLES AND TABLES \\
+local profile = nil
+local sc = false
+local cut = false
+local drsPressed = false
+local timeChange = false
+
+-- // PLAYER ADDED - REMOVING \\
+PlayerDataHandler:InIt()
+
+Players.PlayerAdded:Connect(function(player)
+	if PlayerDataHandler:GetProfile(player) == false then
+		repeat task.wait() until PlayerDataHandler:GetProfile(player) ~= false
+	end
+	
+	profile = PlayerDataHandler:GetProfile(player).Data
+	
+	print(profile)
+	print("fired")
+	event:FireClient(player, {cmd = "UI_COLOR", color = profile.Settings.UIColor})
+	print("fired")
+	
+	local function CharacterAdded(char)
+		task.wait(1)
+		event:FireAllClients({cmd = "PLAYER_JOINED", id = player.UserId, name = player.Name, displayName = player.DisplayName})
+		event:FireClient(player, {cmd = "LOAD_DATA", data = profile})
+		local humanoid = char:WaitForChild("Humanoid")
+		humanoid.Died:Connect(function()
+			event:FireClient(player, {cmd = "DEATH"})
+		end)
+
+		event:FireClient(player, {cmd = "RESPAWN"})
+	end
+	
+	player.CharacterAdded:Connect(CharacterAdded)
+	if player.Character then
+		CharacterAdded(player.Character)
+	end
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+	event:FireAllClients({cmd = "PLAYER_LEFT", playerId = player.UserId})
+	
+	for _, car in workspace.Cars:GetChildren() do
+		if car:GetAttribute("Owner") == player.Name then
+			car:Destroy()
+		end
+	end
+end)
+
+-- // DATA
+event.OnServerEvent:Connect(function(player, args)
+	if args.cmd == "START_RACE" then
+		timingSystemHandler.StartRace()
+	elseif args.cmd == "END_RACE" then
+		timingSystemHandler.EndRace()
+	elseif args.cmd == "SAFETY_CAR" then
+		if sc then
+			sc = false
+			workspace.CAR.Properties:SetAttribute("MoveSpeed", 120)
+		else
+			sc = true
+			workspace.CAR.Properties:SetAttribute("MoveSpeed", 50)
+		end
+	elseif args.cmd == "SETTINGS" then
+		dataHandler.SetData(player, "UIColor", args.value, "Settings")
+		if args.setting == "UIColor" then
+			event:FireClient(player, {cmd = "UI_COLOR", color = dataHandler.GetData(player, "UIColor", "Settings")})
+		end
+	elseif args.cmd == "TIME" then
+		if timeChange then return end
+		timeChange = true
+		if developers.isDeveloper(player.UserId) then
+			if Lighting.ClockTime == 21 then
+				for _, light in CollectionService:GetTagged("Light") do
+					light.Light.Enabled = false
+				end
+				Lighting.Brightness = 3
+				local tween = TweenService:Create(Lighting, TweenInfo.new(2.5), {ClockTime = 17.5})
+				tween:Play()
+				tween.Completed:Once(function()
+					timeChange = false
+					tween:Destroy()
+				end)
+			else
+				for _, light in CollectionService:GetTagged("Light") do
+					light.Light.Enabled = true
+				end
+				Lighting.Brightness = 7
+				local tween = TweenService:Create(Lighting, TweenInfo.new(2.5), {ClockTime = 21})
+				tween:Play()
+				tween.Completed:Once(function()
+					timeChange = false
+					tween:Destroy()
+				end)
+			end
+		end
+	elseif args.cmd == "SELECTED_CAR" then
+		print(args.car)
+		local car = ServerStorage.Assets.Cars:FindFirstChild(args.car):Clone()
+		car:MoveTo(Vector3.new(workspace.QatarSpawn.CFrame.Position))
+		car:SetAttribute("Owner", player.Name)
+		car.Parent = workspace.Cars
+		car:FindFirstChild("VehicleSeat"):Sit(player.Character:FindFirstChild("Humanoid"))
+		
+		local carSetup = dataHandler.GetData(player, args.car, "Cars")
+		car.Animatable.Body.Color = garageData.Colors[carSetup["BodyColor"]]
+		car.Animatable.Windows.Color = garageData.Colors[carSetup["WindowColor"]]
+	elseif args.cmd == "LEAVE_CAR" then
+		for _, car in workspace.Cars:GetChildren() do
+			if car:GetAttribute("Owner") == player.Name then
+				car:Destroy()
+			end
+		end
+	elseif args.cmd == "TIME_TRIAL" then
+		local PlaceId = 109843452925716
+		local PlrList = {player}
+		local TPOptions = Instance.new("TeleportOptions")
+		
+		-- ReservedSeverAccessCode: allows for teleporting to an already existing server (if u have the access code)
+		-- ServerInstanceID: allows for teleporting to a specific (not reserved) server
+		-- ShouldReserveServer: creates a specifically reserved server for the player/party that's only accessible with an access code
+		
+		TPOptions.ShouldReserveServer = true
+		
+		-- ok silent
+		
+		local succ, res = safeTPHandler(PlaceId, PlrList, TPOptions)
+		print(res.PrivateServerId, res.ReservedServerAccessCode)
+	elseif args.cmd == "DRS" then
+		for _, car in workspace.Cars:GetChildren() do
+			if car:GetAttribute("Owner") == player.Name then
+				if car:GetAttribute("Cut") == true then return end
+			end
+		end
+		print(drsHandler.CheckState(player))
+		if drsHandler.CheckState(player) == true then
+			drsHandler.Toggle("OFF", nil, player)
+			return
+		end
+		drsHandler.Toggle("ON", nil, player)
+	elseif args.cmd == "GARAGE" then
+		
+	elseif args.cmd == "CAR_CUSTOMISATION" then
+		print(args.option)
+		dataHandler.SetData(player, args.option, args.choice, "Cars", args.car)
+	elseif args.cmd == "NITRO" then
+		nitroHandler.Toggle(player, args)
+	elseif args.cmd == "DRIFT" then
+		driftHandler.Toggle(player, args)
+	elseif args.cmd == "KEYBINDS_UPDATED" then
+		print(args.keybind, args.key)
+		dataHandler.SetData(player, args.keybind, args.key, "Keybinds")
+		event:FireClient(player, {cmd = "KEYBINDS_UPDATED", keybinds = dataHandler.GetData(player, nil, "Keybinds")})
+	end
+end)
+
+returnData.OnServerInvoke = function(player, args)
+	if args.cmd == "GET_CARS" then
+		return dataHandler.GetData(player, nil, "Cars")
+	elseif args.cmd == "IS_ADMIN" then
+		if player:GetRoleInGroup(13201440) == "Owner" or player:GetRoleInGroup(13201440) == "Developer" or player:GetRoleInGroup(13201440) == "Admin"then
+			return true
+		end
+		return false
+	elseif args.cmd == "CAR_SETUP" then
+		return dataHandler.GetData(player, args.car, "Cars")
+	elseif args.cmd == "REDEEM_CODE" then
+		print(dataHandler.GetData(player, args.code, "Codes"))
+		if codes[args.code] == nil then
+			return "invalid"
+		elseif dataHandler.GetData(player, args.code, "Codes") == nil then
+			dataHandler.SetData(player, args.code, true, "Codes")
+			return "valid"
+		else
+			return "already redeemed"
+		end
+	elseif args.cmd == "GET_KEYBINDS" then
+		return dataHandler.GetData(player, nil, "Keybinds")
+	end
+end
+
+-- // FUNCTIONS \\
+
+drsHandler.detectPlayerEntryExitInFolder(workspace.Qatar.DRS,
+	function(player)
+		drsHandler.Toggle("AVAILABLE", nil, player)
+	end,
+	function(player)
+		drsHandler.Toggle("UNAVAILABLE", nil, player)
+	end
+)
+
+-- // WORKSPACE \\
+
+workspace.Qatar.Sectors.S1.Touched:Connect(function(hit)
+	timingSystemHandler.Sector(hit, 1)
+end)
+
+workspace.Qatar.Sectors.S2.Touched:Connect(function(hit)
+	timingSystemHandler.Sector(hit, 2)
+end)
+
+workspace.Qatar.Sectors.S3.Touched:Connect(function(hit)
+	timingSystemHandler.Sector(hit, 3)
+end)
+
+for _, part in workspace.Qatar.CornerCuts:GetChildren() do
+	if part:IsA("Part") and part.Color == Color3.fromRGB(255, 0, 0) then
+		part.Touched:Connect(function(hit)
+			if cut then return end
+			local player = Players:GetPlayerFromCharacter(hit.Parent)
+			if player then
+				cut = true
+				event:FireClient(player, {cmd = "CUT_ON"})
+				cutHandler.CutSlowdown(player)
+				cut = false
+				event:FireClient(player, {cmd = "CUT_OFF"})
+			end
+		end)
+	end
+end
